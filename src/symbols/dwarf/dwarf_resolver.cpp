@@ -273,6 +273,7 @@ namespace libdwarf {
 
         void lazy_generate_cu_cache() {
             if(!generated_cu_cache) {
+                cu_cache.reserve(131072);
                 walk_compilation_units([this] (const die_object& cu_die) {
                     Dwarf_Half offset_size = 0;
                     Dwarf_Half dwversion = 0;
