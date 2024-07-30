@@ -43,7 +43,7 @@ namespace libdwarf {
     };
 
     struct cu_entry {
-        die_object die;
+        die_object *die;
         Dwarf_Half dwversion;
         Dwarf_Addr low;
         Dwarf_Addr high;
@@ -90,6 +90,7 @@ namespace libdwarf {
         std::unordered_map<Dwarf_Off, std::vector<subprogram_entry>> subprograms_cache;
         // Vector of ranges and their corresponding CU offsets
         std::vector<cu_entry> cu_cache;
+        std::unordered_map<Dwarf_Addr, die_object> cu_cache_clones;
         bool generated_cu_cache = false;
         // Map from CU -> {srcfiles, count}
         std::unordered_map<Dwarf_Off, std::pair<char**, Dwarf_Signed>> srcfiles_cache;
@@ -214,6 +215,7 @@ namespace libdwarf {
                 dwarf_dealloc(dbg, aranges, DW_DLA_LIST);
             }
             cu_cache.clear();
+            cu_cache_clones.clear();
             dwarf_finish(dbg);
         }
 
@@ -273,7 +275,6 @@ namespace libdwarf {
 
         void lazy_generate_cu_cache() {
             if(!generated_cu_cache) {
-                cu_cache.reserve(131072);
                 walk_compilation_units([this] (const die_object& cu_die) {
                     Dwarf_Half offset_size = 0;
                     Dwarf_Half dwversion = 0;
@@ -285,14 +286,28 @@ namespace libdwarf {
                         auto ranges_vec = skeleton.unwrap().cu_die.get_rangelist_entries(dwversion);
                         for(auto range : ranges_vec) {
                             // TODO: Reduce cloning here
-                            cu_cache.push_back({ cu_die.clone(), dwversion, range.first, range.second });
+                            auto off = cu_die.get_global_offset();
+                            auto it = cu_cache_clones.find(range.first);
+                            if(it != cu_cache_clones.end()) {
+                                cu_cache.push_back({ &it->second, dwversion, range.first, range.second });
+                            } else {
+                                auto [new_it, unused] = cu_cache_clones.emplace(off, cu_die.clone());
+                                cu_cache.push_back({ &new_it->second, dwversion, range.first, range.second });
+                            }
                         }
                         return false;
                     } else {
                         auto ranges_vec = cu_die.get_rangelist_entries(dwversion);
                         for(auto range : ranges_vec) {
                             // TODO: Reduce cloning here
-                            cu_cache.push_back({ cu_die.clone(), dwversion, range.first, range.second });
+                            auto off = cu_die.get_global_offset();
+                            auto it = cu_cache_clones.find(range.first);
+                            if(it != cu_cache_clones.end()) {
+                                cu_cache.push_back({ &it->second, dwversion, range.first, range.second });
+                            } else {
+                                auto [new_it, unused] = cu_cache_clones.emplace(off, cu_die.clone());
+                                cu_cache.push_back({ &new_it->second, dwversion, range.first, range.second });
+                            }
                         }
                         return true;
                     }
@@ -919,9 +934,9 @@ namespace libdwarf {
                     // NOTE: If we have a corresponding skeleton, we assume we have one CU matching the skeleton CU
                     if(
                         (skeleton && skeleton.unwrap().cu_die.pc_in_die(skeleton.unwrap().dwversion, pc))
-                        || vec_it->die.pc_in_die(vec_it->dwversion, pc)
+                        || vec_it->die->pc_in_die(vec_it->dwversion, pc)
                     ) {
-                        return cu_info{maybe_owned_die_object::ref(vec_it->die), vec_it->dwversion};
+                        return cu_info{maybe_owned_die_object::ref(*vec_it->die), vec_it->dwversion};
                     }
                 } else {
                     // I've had this happen for _start, where there is a cached CU for the object but _start is outside

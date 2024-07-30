@@ -151,10 +151,15 @@ namespace detail {
         );
     }
 
+    #if 0
     // Check condition in both debug and release. std::runtime_error on failure.
     #define VERIFY(...) ( \
         assert_impl(__VA_ARGS__, ::cpptrace::detail::assert_type::verify, #__VA_ARGS__, CPPTRACE_PFUNC, {}) \
     )
+    #else
+    // Check condition in both debug and release. std::runtime_error on failure.
+    #define VERIFY(...) (void)(__VA_ARGS__)
+    #endif
 
     #ifndef NDEBUG
      // Check condition in both debug. std::runtime_error on failure.
